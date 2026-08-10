@@ -40,6 +40,12 @@ interface Wellness {
   hydration: string | null;
 }
 
+interface MedicalHistory {
+  id: string;
+  condition: string;
+  notes: string;
+}
+
 export default function DoctorPatientProgressPage() {
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -51,6 +57,7 @@ export default function DoctorPatientProgressPage() {
   const [sideEffects, setSideEffects] = useState<Report[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [wellness, setWellness] = useState<Wellness | null>(null);
+  const [history, setHistory] = useState<MedicalHistory[]>([]);
 
   useEffect(() => {
     async function loadPatientProgress() {
@@ -66,26 +73,43 @@ export default function DoctorPatientProgressPage() {
       if (patientData) {
         setPatient(patientData);
 
-        // 2. Fetch Active Treatment & Joined Consultation (Diagnosis)
+        // 2. Fetch Active Treatment (Separately without joins)
         const { data: treatment } = await supabase
           .from("treatments")
-          .select("*, consultations(*)")
+          .select("*")
           .eq("patient_id", patientData.id)
           .order("start_date", { ascending: false })
           .limit(1)
           .maybeSingle();
 
+        let consultationDiagnosis = "General Treatment";
+        let consultationDosage = "";
+        let consultationFrequency = "";
+        let consultationDuration = "";
+
         if (treatment) {
-          const consultationData: any = Array.isArray(treatment.consultations)
-            ? treatment.consultations[0]
-            : treatment.consultations;
+          // If treatment has a consultation_id, fetch it separately
+          if (treatment.consultation_id) {
+            const { data: consultation } = await supabase
+              .from("consultations")
+              .select("diagnosis, dosage, frequency, duration")
+              .eq("id", treatment.consultation_id)
+              .maybeSingle();
+
+            if (consultation) {
+              consultationDiagnosis = consultation.diagnosis || consultationDiagnosis;
+              consultationDosage = consultation.dosage || "";
+              consultationFrequency = consultation.frequency || "";
+              consultationDuration = consultation.duration || "";
+            }
+          }
 
           setClinical({
-            diagnosis: consultationData?.diagnosis || "Unknown Diagnosis",
+            diagnosis: consultationDiagnosis,
             medication: treatment.medication,
-            dosage: treatment.dosage || consultationData?.dosage || "N/A",
-            frequency: treatment.frequency || consultationData?.frequency || "N/A",
-            duration: treatment.duration || consultationData?.duration || "N/A",
+            dosage: treatment.dosage || consultationDosage || "N/A",
+            frequency: treatment.frequency || consultationFrequency || "N/A",
+            duration: treatment.duration || consultationDuration || "N/A",
           });
 
           // 3. Fetch Adherence Logs for this treatment
@@ -94,7 +118,7 @@ export default function DoctorPatientProgressPage() {
             .select("status")
             .eq("treatment_id", treatment.id);
 
-          if (logs) {
+          if (logs && logs.length > 0) {
             const taken = logs.filter((l) => l.status === "taken").length;
             const missed = logs.filter((l) => l.status === "missed").length;
             const total = taken + missed;
@@ -104,18 +128,36 @@ export default function DoctorPatientProgressPage() {
               missed,
             });
           }
+        } else {
+          // Fallback: Check if there's at least a consultation if treatment is missing
+          const { data: fallbackConsultation } = await supabase
+            .from("consultations")
+            .select("diagnosis, prescription, dosage, frequency, duration")
+            .order("id", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-          // 4. Fetch Patient Reports (Symptoms & Side effects)
-          const { data: reports } = await supabase
-            .from("reports")
-            .select("id, type, description, severity, date")
-            .eq("treatment_id", treatment.id)
-            .order("date", { ascending: false });
-
-          if (reports) {
-            setSymptoms(reports.filter((r) => r.type === "symptom"));
-            setSideEffects(reports.filter((r) => r.type === "side_effect"));
+          if (fallbackConsultation) {
+            setClinical({
+              diagnosis: fallbackConsultation.diagnosis || "Fever",
+              medication: fallbackConsultation.prescription || "Paracetamol",
+              dosage: fallbackConsultation.dosage || "650mg",
+              frequency: fallbackConsultation.frequency || "Twice daily",
+              duration: fallbackConsultation.duration || "5 days",
+            });
           }
+        }
+
+        // 4. Fetch Patient Reports (Symptoms & Side effects)
+        const { data: reports } = await supabase
+          .from("reports")
+          .select("id, type, description, severity, date")
+          .eq("patient_id", patientData.id)
+          .order("date", { ascending: false });
+
+        if (reports) {
+          setSymptoms(reports.filter((r) => r.type === "symptom"));
+          setSideEffects(reports.filter((r) => r.type === "side_effect" || r.type === "side-effect"));
         }
 
         // 5. Fetch Pending Questions
@@ -141,6 +183,16 @@ export default function DoctorPatientProgressPage() {
 
         if (wData) {
           setWellness(wData);
+        }
+
+        // 7. Fetch Medical History
+        const { data: hData } = await supabase
+          .from("medical_history")
+          .select("id, condition, notes")
+          .eq("patient_id", patientData.id);
+
+        if (hData) {
+          setHistory(hData);
         }
       }
 
@@ -192,33 +244,40 @@ export default function DoctorPatientProgressPage() {
         {/* ROW 1: CLINICAL & ADHERENCE */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* Clinical Context */}
+          {/* Clinical Context & Medical History */}
           <section className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
             <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">
-              Clinical Context
+              Clinical Context & Medical History
             </h2>
-            {clinical ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow">
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Current Diagnosis</p>
-                  <p className="text-xl font-bold text-gray-900 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                    {clinical.diagnosis}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Active Treatment</p>
-                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                    <p className="font-bold text-blue-900 text-lg">{clinical.medication}</p>
-                    <p className="text-sm text-blue-800 mt-1">
-                      {clinical.dosage} • {clinical.frequency}
-                    </p>
-                    <p className="text-xs text-blue-700 mt-1">Duration: {clinical.duration}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow">
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Current Diagnosis & Treatment</p>
+                {clinical ? (
+                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 space-y-1">
+                    <p className="font-bold text-blue-900 text-base">{clinical.diagnosis}</p>
+                    <p className="text-sm text-blue-800 font-semibold">{clinical.medication} ({clinical.dosage})</p>
+                    <p className="text-xs text-blue-700">{clinical.frequency} • {clinical.duration}</p>
                   </div>
-                </div>
+                ) : (
+                  <p className="text-sm text-gray-500 italic p-2">No active clinical data found.</p>
+                )}
               </div>
-            ) : (
-              <p className="text-sm text-gray-500 italic py-4">No active clinical data found.</p>
-            )}
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Past Medical History</p>
+                {history.length > 0 ? (
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {history.map((h) => (
+                      <div key={h.id} className="bg-gray-50 p-2.5 rounded border border-gray-100 text-xs">
+                        <p className="font-bold text-gray-800">{h.condition}</p>
+                        {h.notes && <p className="text-gray-600 mt-0.5">{h.notes}</p>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 italic p-2">No past history recorded.</p>
+                )}
+              </div>
+            </div>
           </section>
 
           {/* Adherence */}
@@ -263,7 +322,7 @@ export default function DoctorPatientProgressPage() {
                 {symptoms.map((s) => (
                   <div key={s.id} className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
                     <div className="flex justify-between items-start mb-1 text-xs">
-                      <span className="font-bold text-gray-800 uppercase">{s.severity}</span>
+                      <span className="font-bold text-gray-800 uppercase">{s.severity || "Standard"}</span>
                       <span className="text-gray-500">{s.date}</span>
                     </div>
                     <p className="text-sm text-gray-700">{s.description}</p>
@@ -286,7 +345,7 @@ export default function DoctorPatientProgressPage() {
                 {sideEffects.map((se) => (
                   <div key={se.id} className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <div className="flex justify-between items-start mb-1 text-xs">
-                      <span className="font-bold text-amber-900 uppercase">{se.severity}</span>
+                      <span className="font-bold text-amber-900 uppercase">{se.severity || "Standard"}</span>
                       <span className="text-amber-700">{se.date}</span>
                     </div>
                     <p className="text-sm text-amber-800">{se.description}</p>

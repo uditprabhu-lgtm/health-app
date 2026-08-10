@@ -12,11 +12,9 @@ export default function ReportSymptomPage() {
   const [success, setSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Relationships
   const [patientId, setPatientId] = useState<string | null>(null);
   const [treatmentId, setTreatmentId] = useState<string | null>(null);
 
-  // Form State
   const [description, setDescription] = useState("");
   const [severity, setSeverity] = useState("Mild");
 
@@ -24,7 +22,6 @@ export default function ReportSymptomPage() {
     async function fetchContext() {
       setLoading(true);
 
-      // 1. Get the current patient
       const { data: patient } = await supabase
         .from("patients")
         .select("id")
@@ -34,7 +31,6 @@ export default function ReportSymptomPage() {
       if (patient) {
         setPatientId(patient.id);
 
-        // 2. Get the patient's active treatment to link the report to
         const { data: treatment } = await supabase
           .from("treatments")
           .select("id")
@@ -72,11 +68,10 @@ export default function ReportSymptomPage() {
 
     const todayStr = new Date().toISOString().split("T")[0];
 
-    // 3. Save the symptom report to the database
     const { error } = await supabase.from("reports").insert([
       {
         patient_id: patientId,
-        treatment_id: treatmentId, // Links to active treatment (if any)
+        treatment_id: treatmentId,
         type: "symptom",
         description: description,
         severity: severity,
@@ -89,7 +84,6 @@ export default function ReportSymptomPage() {
       setErrorMsg(`Failed to save report: ${error.message}`);
       setSubmitting(false);
     } else {
-      // Show confirmation UI, then redirect back to dashboard
       setSuccess(true);
       setTimeout(() => {
         router.push("/patient");
@@ -112,10 +106,7 @@ export default function ReportSymptomPage() {
           <h1 className="text-2xl font-bold text-gray-900">Report Symptom</h1>
           <p className="text-sm text-gray-500">Log how you are feeling</p>
         </div>
-        <Link
-          href="/patient"
-          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-        >
+        <Link href="/patient" className="text-sm text-blue-600 hover:text-blue-800 font-medium">
           &larr; Cancel
         </Link>
       </header>
@@ -140,7 +131,6 @@ export default function ReportSymptomPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Symptom Description */}
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-2">
                   What are you experiencing?
@@ -155,7 +145,6 @@ export default function ReportSymptomPage() {
                 />
               </div>
 
-              {/* Severity Selector */}
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-3">
                   Severity
@@ -178,7 +167,6 @@ export default function ReportSymptomPage() {
                 </div>
               </div>
 
-              {/* Submit Button */}
               <div className="pt-4 border-t border-gray-100">
                 <button
                   type="submit"

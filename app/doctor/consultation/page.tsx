@@ -11,287 +11,205 @@ interface Patient {
   age: number;
 }
 
-interface Appointment {
-  id: string;
-  date: string;
-  time: string;
-  status: string;
-  patient_id: string;
-  doctor_id: string;
-  patients: Patient | null;
-}
-
 export default function DoctorConsultationPage() {
   const router = useRouter();
-
-  const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [patient, setPatient] = useState<Patient | null>(null);
 
-  // Form state initialized with demo default values
+  // Form states
   const [diagnosis, setDiagnosis] = useState("Fever");
   const [prescription, setPrescription] = useState("Paracetamol");
-  const [dosage, setDosage] = useState("500 mg");
+  const [dosage, setDosage] = useState("650 mg");
   const [frequency, setFrequency] = useState("Twice daily");
-  const [duration, setDuration] = useState("3");
-  const [instructions, setInstructions] = useState(
-    "Take after food and maintain adequate hydration."
-  );
+  const [duration, setDuration] = useState("5");
+  const [instructions, setInstructions] = useState("Take after food and maintain adequate hydration.");
 
   useEffect(() => {
-    async function loadAppointment() {
+    async function fetchActivePatient() {
       setLoading(true);
-
-      // Fetch the latest appointment with patient details
+      // Fetch Udit (the active patient in our MVP)
       const { data, error } = await supabase
-        .from("appointments")
-        .select("id, date, time, status, patient_id, doctor_id, patients(id, name, age)")
-        .order("date", { ascending: false })
+        .from("patients")
+        .select("id, name, age")
         .limit(1)
         .maybeSingle();
 
-      if (error) {
-        console.error("Error fetching appointment:", error);
-        setErrorMsg("Failed to load appointment details.");
-      } else if (data) {
-        setAppointment(data as unknown as Appointment);
+      if (data) {
+        setPatient(data);
+      } else if (error) {
+        console.error("Error fetching patient:", error.message);
       }
-
       setLoading(false);
     }
-
-    loadAppointment();
+    fetchActivePatient();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSaveCarePlan = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!patient) return;
 
-    if (!appointment) {
-      setErrorMsg("No active appointment found to link this consultation to.");
+    setSaving(true);
+
+    // 1. Save Consultation
+    const { data: consultationData, error: consultationError } = await supabase
+      .from("consultations")
+      .insert([
+        {
+          diagnosis,
+          prescription,
+          dosage,
+          frequency,
+          duration: `${duration} days`,
+          instructions,
+        },
+      ])
+      .select("id")
+      .single();
+
+    if (consultationError) {
+      console.error("Consultation error:", consultationError.message);
+      setSaving(false);
       return;
     }
 
-    setSaving(true);
-    setErrorMsg("");
+    // 2. Save Active Treatment Plan linked to Udit
+    const todayStr = new Date().toISOString().split("T")[0];
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + parseInt(duration || "5"));
+    const endDateStr = endDate.toISOString().split("T")[0];
 
-    try {
-      // 1. Create Consultation Record
-      const { data: consultation, error: consultationError } = await supabase
-        .from("consultations")
-        .insert([
-          {
-            appointment_id: appointment.id,
-            diagnosis: diagnosis,
-            prescription: prescription,
-            dosage: dosage,
-            frequency: frequency,
-            duration: `${duration} days`,
-            instructions: instructions,
-          },
-        ])
-        .select()
-        .single();
+    const { error: treatmentError } = await supabase.from("treatments").insert([
+      {
+        patient_id: patient.id,
+        consultation_id: consultationData.id,
+        medication: prescription,
+        dosage,
+        frequency,
+        duration: `${duration} days`,
+        start_date: todayStr,
+        end_date: endDateStr,
+      },
+    ]);
 
-      if (consultationError || !consultation) {
-        throw new Error(
-          consultationError?.message || "Failed to create consultation record."
-        );
-      }
-
-      // 2. Calculate Start and End Dates for Treatment
-      const startDate = new Date();
-      const numDays = parseInt(duration, 10) || 1;
-      const endDate = new Date();
-      endDate.setDate(startDate.getDate() + numDays);
-
-      const startDateStr = startDate.toISOString().split("T")[0];
-      const endDateStr = endDate.toISOString().split("T")[0];
-
-      // 3. Create Associated Treatment Record
-      const { error: treatmentError } = await supabase.from("treatments").insert([
-        {
-          patient_id: appointment.patient_id,
-          consultation_id: consultation.id,
-          medication: prescription,
-          dosage: dosage,
-          frequency: frequency,
-          duration: `${duration} days`,
-          start_date: startDateStr,
-          end_date: endDateStr,
-        },
-      ]);
-
-      if (treatmentError) {
-        throw new Error(treatmentError.message);
-      }
-
-      // 4. Update Appointment Status to Completed
-      await supabase
-        .from("appointments")
-        .update({ status: "completed" })
-        .eq("id", appointment.id);
-
-      // Redirect to Doctor Patient Summary
-      router.push("/doctor/patient");
-    } catch (err: any) {
-      console.error("Error saving care plan:", err);
-      setErrorMsg(err.message || "An unexpected error occurred while saving.");
+    if (treatmentError) {
+      console.error("Treatment error:", treatmentError.message);
       setSaving(false);
+    } else {
+      router.push("/doctor/patient");
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <p className="text-gray-500 font-medium">Loading consultation session...</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-500 font-medium">Loading patient context...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
-      <header className="bg-white border-b border-gray-200 py-4 px-6 sm:px-8 flex items-center justify-between">
+    <div className="min-h-screen bg-gray-50 text-gray-900 pb-12">
+      <header className="bg-white border-b border-gray-200 py-4 px-8 flex justify-between items-center shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Doctor Consultation</h1>
-          <p className="text-sm text-gray-500">Create & Save Patient Care Plan</p>
+          <h1 className="text-xl font-bold text-gray-900">Doctor Consultation</h1>
+          <p className="text-xs text-gray-500">Create & Save Patient Care Plan</p>
         </div>
-        <Link
-          href="/doctor"
-          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-        >
+        <Link href="/doctor" className="text-sm font-medium text-blue-600 hover:text-blue-800">
           &larr; Back to Doctor Dashboard
         </Link>
       </header>
 
-      <main className="max-w-2xl mx-auto p-6 sm:p-8">
-        {errorMsg && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
-            {errorMsg}
-          </div>
-        )}
-
-        <div className="bg-white p-6 sm:p-8 rounded-xl border border-gray-200 shadow-sm space-y-6">
-          {/* Patient Header Badge */}
-          <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex items-center justify-between">
+      <main className="max-w-2xl mx-auto p-8">
+        <form onSubmit={handleSaveCarePlan} className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm space-y-6">
+          {/* Real Patient Badge */}
+          <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg flex justify-between items-center">
             <div>
-              <p className="text-xs uppercase tracking-wider font-semibold text-blue-600">
-                Patient
-              </p>
-              <h2 className="text-xl font-bold text-gray-900">
-                {appointment?.patients?.name || "Udit"}
-              </h2>
+              <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Patient</p>
+              <h2 className="text-lg font-bold text-gray-900">{patient ? patient.name : "Udit Nitin Prabhu"}</h2>
             </div>
-            <span className="text-sm font-semibold bg-blue-200 text-blue-800 px-3 py-1 rounded-full">
-              Age: {appointment?.patients?.age || 19}
+            <span className="px-3 py-1 bg-white border border-blue-200 text-blue-800 text-xs font-bold rounded-full shadow-sm">
+              Age: {patient ? patient.age : 19}
             </span>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Diagnosis (Restricted to 'Fever') */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Diagnosis
-              </label>
-              <select
-                value={diagnosis}
-                onChange={(e) => setDiagnosis(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white font-medium"
-                required
-              >
-                <option value="Fever">Fever</option>
-              </select>
-            </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">Diagnosis</label>
+            <select
+              value={diagnosis}
+              onChange={(e) => setDiagnosis(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+            >
+              <option value="Fever">Fever</option>
+              <option value="Viral Infection">Viral Infection</option>
+              <option value="Hypertension">Hypertension</option>
+            </select>
+          </div>
 
-            {/* Prescription Medication */}
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">Prescription / Medication</label>
+            <input
+              type="text"
+              value={prescription}
+              onChange={(e) => setPrescription(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Prescription
-              </label>
+              <label className="block text-sm font-bold text-gray-700 mb-2">Dosage</label>
               <input
                 type="text"
-                value={prescription}
-                onChange={(e) => setPrescription(e.target.value)}
-                placeholder="e.g. Paracetamol"
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                value={dosage}
+                onChange={(e) => setDosage(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 required
               />
             </div>
-
-            {/* Dosage & Frequency Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Dosage
-                </label>
-                <input
-                  type="text"
-                  value={dosage}
-                  onChange={(e) => setDosage(e.target.value)}
-                  placeholder="e.g. 500 mg"
-                  className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Frequency
-                </label>
-                <input
-                  type="text"
-                  value={frequency}
-                  onChange={(e) => setFrequency(e.target.value)}
-                  placeholder="e.g. Twice daily"
-                  className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Duration (Days) */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Duration (number of days)
-              </label>
+              <label className="block text-sm font-bold text-gray-700 mb-2">Frequency</label>
               <input
-                type="number"
-                min="1"
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-                placeholder="3"
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                type="text"
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 required
               />
             </div>
+          </div>
 
-            {/* Instructions Multiline Textarea */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Instructions
-              </label>
-              <textarea
-                rows={3}
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-                placeholder="Take after food and maintain adequate hydration."
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white resize-none"
-                required
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">Duration (number of days)</label>
+            <input
+              type="number"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              required
+            />
+          </div>
 
-            {/* Submit Button */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={saving}
-                className="w-full py-3 bg-emerald-600 text-white font-medium text-base rounded-lg hover:bg-emerald-700 transition disabled:opacity-50 shadow-sm"
-              >
-                {saving ? "Saving Care Plan..." : "Save Care Plan"}
-              </button>
-            </div>
-          </form>
-        </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">Instructions</label>
+            <textarea
+              rows={3}
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full py-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition shadow-sm"
+          >
+            {saving ? "Saving Care Plan..." : "Save Care Plan"}
+          </button>
+        </form>
       </main>
     </div>
   );

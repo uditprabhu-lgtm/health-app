@@ -10,348 +10,234 @@ interface Patient {
   age: number;
 }
 
-interface Appointment {
-  id: string;
-  date: string;
-  time: string;
-  status: string;
-  doctors: {
-    name: string;
-    specialty: string;
-  } | null;
-}
-
 interface Treatment {
   id: string;
   medication: string;
-  dosage: string;
   frequency: string;
   duration: string;
   start_date: string;
-  end_date: string;
 }
 
-interface Adherence {
+interface MedicalHistory {
   id: string;
-  date: string;
-  status: string;
+  condition: string;
+  notes: string;
 }
 
-interface Wellness {
-  id: string;
-  date: string;
-  sleep: string | null;
-  mood: string | null;
-  activity: string | null;
-  hydration: string | null;
-}
-
-export default function PatientDashboard() {
-  const [patient, setPatient] = useState<Patient | null>(null);
-  const [appointment, setAppointment] = useState<Appointment | null>(null);
-  const [treatment, setTreatment] = useState<Treatment | null>(null);
-  const [todayAdherence, setTodayAdherence] = useState<Adherence | null>(null);
-  const [wellness, setWellness] = useState<Wellness | null>(null);
+export default function PatientDashboardPage() {
   const [loading, setLoading] = useState(true);
+  const [allPatients, setAllPatients] = useState<Patient[]>([]);
+  const [patient, setPatient] = useState<Patient | null>(null);
+  const [treatment, setTreatment] = useState<Treatment | null>(null);
+  const [history, setHistory] = useState<MedicalHistory[]>([]);
+  const [todayStatus, setTodayStatus] = useState<string | null>(null);
+
+  const todayStr = new Date().toISOString().split("T")[0];
 
   useEffect(() => {
-    async function fetchDashboardData() {
+    async function loadPatientsList() {
       setLoading(true);
+      const { data } = await supabase.from("patients").select("*");
+      if (data) setAllPatients(data);
 
-      // 1. Fetch the single patient record
-      const { data: patientData, error: patientError } = await supabase
-        .from("patients")
-        .select("*")
-        .limit(1)
-        .maybeSingle();
-
-      if (patientError || !patientData) {
-        console.error("Error fetching patient:", patientError);
-        setLoading(false);
-        return;
+      const storedId = localStorage.getItem("patientId");
+      if (storedId && data) {
+        const found = data.find((p) => p.id === storedId);
+        if (found) setPatient(found);
       }
+      setLoading(false);
+    }
+    loadPatientsList();
+  }, []);
 
-      setPatient(patientData);
+  useEffect(() => {
+    if (!patient) return;
 
-      // 2. Fetch upcoming appointment for this patient
-      const { data: appointmentData } = await supabase
-        .from("appointments")
-        .select("id, date, time, status, doctors(name, specialty)")
-        .eq("patient_id", patientData.id)
-        .order("date", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (appointmentData) {
-        setAppointment(appointmentData as unknown as Appointment);
-      }
-
-      // 3. Fetch active/latest treatment plan
-      const { data: treatmentData } = await supabase
+    async function loadPatientData() {
+      setLoading(true);
+      const { data: activeTreatment } = await supabase
         .from("treatments")
         .select("*")
-        .eq("patient_id", patientData.id)
+        .eq("patient_id", patient?.id)
         .order("start_date", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (treatmentData) {
-        setTreatment(treatmentData);
-
-        // Fetch today's treatment adherence if treatment exists
-        const todayStr = new Date().toISOString().split("T")[0];
-        const { data: adherenceData } = await supabase
+      if (activeTreatment) {
+        setTreatment(activeTreatment);
+        const { data: logs } = await supabase
           .from("adherence")
-          .select("*")
-          .eq("treatment_id", treatmentData.id)
-          .eq("date", todayStr)
-          .maybeSingle();
+          .select("status")
+          .eq("treatment_id", activeTreatment.id)
+          .eq("date", todayStr);
 
-        if (adherenceData) {
-          setTodayAdherence(adherenceData);
-        }
+        if (logs && logs.length > 0) setTodayStatus(logs[0].status);
       }
 
-      // 4. Fetch latest wellness overview
-      const { data: wellnessData } = await supabase
-        .from("wellness")
-        .select("*")
-        .eq("patient_id", patientData.id)
-        .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data: histData } = await supabase
+        .from("medical_history")
+        .select("id, condition, notes")
+        .eq("patient_id", patient?.id);
 
-      if (wellnessData) {
-        setWellness(wellnessData);
-      }
-
+      if (histData) setHistory(histData);
       setLoading(false);
     }
 
-    fetchDashboardData();
-  }, []);
+    loadPatientData();
+  }, [patient, todayStr]);
+
+  const selectPatient = (p: Patient) => {
+    localStorage.setItem("patientId", p.id);
+    setPatient(p);
+  };
+
+  const switchAccount = () => {
+    localStorage.removeItem("patientId");
+    setPatient(null);
+    setTreatment(null);
+    setHistory([]);
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <p className="text-gray-500 font-medium">Loading dashboard...</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-500 font-medium">Loading...</p>
+      </div>
+    );
+  }
+
+  // Account Picker View if no patient selected
+  if (!patient) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white p-8 rounded-2xl border border-gray-200 shadow-sm space-y-6">
+          <div className="flex justify-between items-center">
+            <h1 className="text-xl font-bold text-gray-900">Select Patient Account</h1>
+            <Link href="/" className="text-xs font-bold text-blue-600">&larr; Home</Link>
+          </div>
+
+          {allPatients.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-4">No patient profiles found.</p>
+          ) : (
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {allPatients.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => selectPatient(p)}
+                  className="w-full p-4 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 rounded-xl text-left flex justify-between items-center transition"
+                >
+                  <div>
+                    <p className="font-bold text-gray-900">{p.name}</p>
+                    <p className="text-xs text-gray-500">Age: {p.age}</p>
+                  </div>
+                  <span className="text-xs font-bold text-blue-600">Select &rarr;</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <Link
+            href="/patient/signup"
+            className="block w-full py-3 bg-blue-600 text-white font-bold text-sm rounded-xl text-center hover:bg-blue-700 transition shadow-sm"
+          >
+            + Sign Up New Patient
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
-      {/* Top Navigation / Header */}
-      <header className="bg-white border-b border-gray-200 py-4 px-6 sm:px-8 flex items-center justify-between">
+    <div className="min-h-screen bg-gray-50 text-gray-900 pb-12">
+      <header className="bg-white border-b border-gray-200 py-4 px-8 flex justify-between items-center shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Welcome, {patient ? patient.name : "Patient"}
-          </h1>
-          <p className="text-sm text-gray-500">Patient Dashboard</p>
+          <h1 className="text-xl font-bold text-gray-900">Welcome, {patient.name}</h1>
+          <p className="text-xs text-gray-500">Patient Dashboard</p>
         </div>
-        <Link
-          href="/"
-          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-        >
-          &larr; Home
-        </Link>
+        <div className="flex items-center gap-4">
+          <button onClick={switchAccount} className="text-xs font-bold text-blue-600 hover:underline">
+            Switch Account
+          </button>
+          <Link href="/" className="text-sm font-medium text-gray-600 hover:text-gray-800">
+            &larr; Home
+          </Link>
+        </div>
       </header>
 
-      <main className="max-w-5xl mx-auto p-6 sm:p-8 space-y-8">
-        {/* Quick Action Navigation */}
-        <section className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Quick Actions
-          </h2>
-          {/* Adjusted grid layout to lg:grid-cols-4 so the 7 items wrap nicely */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            <Link
-              href="/patient/book"
-              className="px-4 py-3 bg-blue-600 text-white text-center text-sm font-medium rounded-lg hover:bg-blue-700 transition"
-            >
-              Book Appointment
-            </Link>
-            
-            <Link
-              href="/patient/careplan" 
-              className="px-4 py-3 bg-white border border-gray-300 text-gray-700 text-center text-sm font-medium rounded-lg hover:bg-gray-50 transition"
-            >
+      <main className="max-w-5xl mx-auto p-8 space-y-6">
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Quick Actions</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Link href="/patient/careplan" className="p-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-sm rounded-lg text-center transition">
               View Care Plan
             </Link>
-
-            <Link
-              href="/patient/treatment"
-              className="px-4 py-3 bg-white border border-gray-300 text-gray-700 text-center text-sm font-medium rounded-lg hover:bg-gray-50 transition"
-            >
+            <Link href="/patient/treatment" className="p-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-sm rounded-lg text-center transition">
               Track Treatment
             </Link>
-            
-            <Link
-              href="/patient/report"
-              className="px-4 py-3 bg-white border border-gray-300 text-gray-700 text-center text-sm font-medium rounded-lg hover:bg-gray-50 transition"
-            >
+            <Link href="/patient/symptoms" className="p-3 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-sm rounded-lg text-center transition">
               Report Symptoms
             </Link>
-
-            <Link
-              href="/patient/side-effect"
-              className="px-4 py-3 bg-white border border-gray-300 text-gray-700 text-center text-sm font-medium rounded-lg hover:bg-gray-50 transition"
-            >
+            <Link href="/patient/side-effects" className="p-3 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-sm rounded-lg text-center transition">
               Report Side Effect
             </Link>
-
-            <Link
-              href="/patient/wellness"
-              className="px-4 py-3 bg-white border border-gray-300 text-gray-700 text-center text-sm font-medium rounded-lg hover:bg-gray-50 transition"
-            >
-              Wellness
+            <Link href="/patient/wellness" className="p-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm rounded-lg text-center transition">
+              Wellness Check
             </Link>
-
-            {/* NEW LINK ADDED HERE */}
-            <Link
-              href="/patient/ask-doctor"
-              className="px-4 py-3 bg-white border border-gray-300 text-gray-700 text-center text-sm font-medium rounded-lg hover:bg-gray-50 transition"
-            >
+            <Link href="/patient/ask-doctor" className="p-3 bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-sm rounded-lg text-center transition">
               Ask Doctor
             </Link>
+            <Link href="/patient/history" className="p-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-sm rounded-lg text-center transition border border-rose-200">
+              + Medical History
+            </Link>
+            <Link href="/patient/explain" className="p-3 bg-teal-50 hover:bg-teal-100 text-teal-700 font-bold text-sm rounded-lg text-center transition border border-teal-200">
+              💡 Understand Condition
+            </Link>
           </div>
-        </section>
+        </div>
 
-        {/* Core Dashboard Modules */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Upcoming Appointment */}
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">
-                Upcoming Appointment
-              </h2>
-              {appointment ? (
-                <div className="space-y-2 text-sm text-gray-700">
-                  <p>
-                    <span className="font-medium text-gray-900">Doctor:</span>{" "}
-                    {appointment.doctors?.name || "Unknown"} (
-                    {appointment.doctors?.specialty || "General"})
-                  </p>
-                  <p>
-                    <span className="font-medium text-gray-900">Date:</span>{" "}
-                    {appointment.date}
-                  </p>
-                  <p>
-                    <span className="font-medium text-gray-900">Time:</span>{" "}
-                    {appointment.time}
-                  </p>
-                  <p>
-                    <span className="font-medium text-gray-900">Status:</span>{" "}
-                    <span className="capitalize px-2 py-0.5 text-xs font-semibold rounded bg-blue-100 text-blue-800">
-                      {appointment.status}
-                    </span>
-                  </p>
-                </div>
-              ) : (
-                <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-6 text-center text-gray-500 text-sm">
-                  No upcoming appointments scheduled.
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Current Treatment Plan */}
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">
-                Current Treatment Plan
-              </h2>
+              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Current Treatment Plan</h2>
               {treatment ? (
-                <div className="space-y-2 text-sm text-gray-700">
-                  <p>
-                    <span className="font-medium text-gray-900">Medication:</span>{" "}
-                    {treatment.medication}
-                  </p>
-                  <p>
-                    <span className="font-medium text-gray-900">Dosage:</span>{" "}
-                    {treatment.dosage}
-                  </p>
-                  <p>
-                    <span className="font-medium text-gray-900">Frequency:</span>{" "}
-                    {treatment.frequency}
-                  </p>
-                  <p>
-                    <span className="font-medium text-gray-900">Duration:</span>{" "}
-                    {treatment.duration} ({treatment.start_date} to {treatment.end_date})
-                  </p>
+                <div className="space-y-1">
+                  <p className="text-lg font-bold text-blue-900">{treatment.medication}</p>
+                  <p className="text-sm text-gray-600">{treatment.frequency} • {treatment.duration}</p>
                 </div>
               ) : (
-                <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-6 text-center text-gray-500 text-sm">
-                  No active treatment plan prescribed yet.
-                </div>
+                <p className="text-sm text-gray-400 italic">No active treatment plan prescribed yet.</p>
               )}
+            </div>
+            <div className="mt-6 pt-4 border-t border-gray-100 flex justify-between items-center">
+              <span className="text-xs font-semibold text-gray-500">Today&apos;s Status:</span>
+              <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                todayStatus === "taken" ? "bg-emerald-100 text-emerald-800" :
+                todayStatus === "missed" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-600"
+              }`}>
+                {todayStatus ? todayStatus.toUpperCase() : "PENDING"}
+              </span>
             </div>
           </div>
 
-          {/* Today's Treatment Status */}
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">
-              Today's Treatment Status
-            </h2>
-            {treatment ? (
-              <div className="space-y-2 text-sm text-gray-700">
-                <p>
-                  <span className="font-medium text-gray-900">Medication:</span>{" "}
-                  {treatment.medication}
-                </p>
-                <p>
-                  <span className="font-medium text-gray-900">Status for Today:</span>{" "}
-                  {todayAdherence ? (
-                    <span
-                      className={`capitalize px-2 py-0.5 text-xs font-semibold rounded ${
-                        todayAdherence.status === "taken"
-                          ? "bg-green-100 text-green-800"
-                          : "bg-amber-100 text-amber-800"
-                      }`}
-                    >
-                      {todayAdherence.status}
-                    </span>
-                  ) : (
-                    <span className="text-gray-500 italic">Not logged yet today</span>
-                  )}
-                </p>
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Medical History</h2>
+                <Link href="/patient/history" className="text-xs font-bold text-blue-600 hover:underline">+ Add Condition</Link>
               </div>
-            ) : (
-              <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-6 text-center text-gray-500 text-sm">
-                No active medications to track.
-              </div>
-            )}
-          </div>
-
-          {/* Basic Wellness Overview */}
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">
-              Latest Wellness Overview
-            </h2>
-            {wellness ? (
-              <div className="grid grid-cols-2 gap-3 text-sm text-gray-700">
-                <div className="bg-gray-50 p-3 rounded border border-gray-100">
-                  <p className="text-xs text-gray-500">Sleep</p>
-                  <p className="font-medium text-gray-900">{wellness.sleep || "N/A"}</p>
+              {history.length > 0 ? (
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {history.map((h) => (
+                    <div key={h.id} className="p-2 bg-gray-50 rounded border border-gray-100 text-xs">
+                      <p className="font-bold text-gray-800">{h.condition}</p>
+                      {h.notes && <p className="text-gray-500">{h.notes}</p>}
+                    </div>
+                  ))}
                 </div>
-                <div className="bg-gray-50 p-3 rounded border border-gray-100">
-                  <p className="text-xs text-gray-500">Mood</p>
-                  <p className="font-medium text-gray-900">{wellness.mood || "N/A"}</p>
-                </div>
-                <div className="bg-gray-50 p-3 rounded border border-gray-100">
-                  <p className="text-xs text-gray-500">Activity</p>
-                  <p className="font-medium text-gray-900">{wellness.activity || "N/A"}</p>
-                </div>
-                <div className="bg-gray-50 p-3 rounded border border-gray-100">
-                  <p className="text-xs text-gray-500">Hydration</p>
-                  <p className="font-medium text-gray-900">{wellness.hydration || "N/A"}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-6 text-center text-gray-500 text-sm">
-                No wellness data logged yet.
-              </div>
-            )}
+              ) : (
+                <p className="text-sm text-gray-400 italic">No medical history logged yet.</p>
+              )}
+            </div>
           </div>
         </div>
       </main>

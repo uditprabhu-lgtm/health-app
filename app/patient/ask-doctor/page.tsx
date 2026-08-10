@@ -71,13 +71,14 @@ export default function AskDoctorPage() {
 
     const todayStr = new Date().toISOString().split("T")[0];
 
-    // 3. Save the question to the database
+    // 3. Save the question to the database (populating both column variants to prevent schema errors)
     const { error } = await supabase.from("questions").insert([
       {
         patient_id: patientId,
-        appointment_id: appointmentId, // Links to the relevant appointment
-        question_text: question,
-        answered: false,               // Explicitly setting to false for the MVP
+        appointment_id: appointmentId,
+        question: question,         // Satisfies schemas expecting 'question'
+        question_text: question,    // Satisfies schemas expecting 'question_text'
+        answered: false,
         date: todayStr,
       },
     ]);
