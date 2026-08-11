@@ -23,7 +23,7 @@ export default function PatientSignupPage() {
 
     if (!error && data) {
       // Save this specific patient's ID to browser storage
-      localStorage.setItem("patientId", data.id);
+      sessionStorage.setItem("patientId", data.id);
       router.push("/patient");
     } else {
       console.error(error?.message);

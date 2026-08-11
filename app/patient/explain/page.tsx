@@ -12,7 +12,7 @@ export default function ExplainCarePage() {
   useEffect(() => {
     async function checkActivePrescription() {
       setLoading(true);
-      const patientId = localStorage.getItem("patientId");
+      const patientId = sessionStorage.getItem("patientId");
       if (!patientId) {
         setLoading(false);
         return;

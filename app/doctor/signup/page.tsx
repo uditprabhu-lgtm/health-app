@@ -34,7 +34,7 @@ export default function DoctorSignupPage() {
       .single();
 
     if (!error && data) {
-      localStorage.setItem("doctorId", data.id);
+      sessionStorage.setItem("doctorId", data.id);
       router.push("/doctor");
     } else {
       console.error(error?.message);

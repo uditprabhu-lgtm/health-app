@@ -7,7 +7,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
       <div className="max-w-xl w-full bg-white p-8 rounded-2xl border border-gray-200 shadow-sm text-center space-y-8">
         <div>
-          <h1 className="text-3xl font-black text-gray-900">CareFlow Portal</h1>
+          <h1 className="text-3xl font-black text-gray-900">DIYagnosis Portal</h1>
           <p className="text-sm text-gray-500 mt-2">Sign up or login to access your role-based dashboard</p>
         </div>
 

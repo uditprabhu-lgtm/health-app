@@ -34,13 +34,18 @@ export default function PatientDashboardPage() {
 
   const todayStr = new Date().toISOString().split("T")[0];
 
+  // FIX: Added this to dynamically change the browser tab name
+  useEffect(() => {
+    document.title = "Diyagnosis | Patient Dashboard";
+  }, []);
+
   useEffect(() => {
     async function loadPatientsList() {
       setLoading(true);
       const { data } = await supabase.from("patients").select("*");
       if (data) setAllPatients(data);
 
-      const storedId = localStorage.getItem("patientId");
+      const storedId = sessionStorage.getItem("patientId");
       if (storedId && data) {
         const found = data.find((p) => p.id === storedId);
         if (found) setPatient(found);
@@ -87,12 +92,12 @@ export default function PatientDashboardPage() {
   }, [patient, todayStr]);
 
   const selectPatient = (p: Patient) => {
-    localStorage.setItem("patientId", p.id);
+    sessionStorage.setItem("patientId", p.id);
     setPatient(p);
   };
 
   const switchAccount = () => {
-    localStorage.removeItem("patientId");
+    sessionStorage.removeItem("patientId");
     setPatient(null);
     setTreatment(null);
     setHistory([]);
@@ -177,7 +182,7 @@ export default function PatientDashboardPage() {
             <Link href="/patient/symptoms" className="p-3 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-sm rounded-lg text-center transition">
               Report Symptoms
             </Link>
-            <Link href="/patient/side-effects" className="p-3 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-sm rounded-lg text-center transition">
+            <Link href="/patient/side-effect" className="p-3 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-sm rounded-lg text-center transition">
               Report Side Effect
             </Link>
             <Link href="/patient/wellness" className="p-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm rounded-lg text-center transition">

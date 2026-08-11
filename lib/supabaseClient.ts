@@ -1,7 +1,8 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabaseUrl = "https://gsmaxkxooaverirtkdot.supabase.co";
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Paste your exact eyJ... string here! 
+const supabaseKey = "sb_publishable_y4BOehQuKshgos7R69hFYg_SKumk-Zl"; 
 
+export const supabase = createClient(supabaseUrl, supabaseKey);

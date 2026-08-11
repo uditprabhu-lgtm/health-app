@@ -1,7 +1,10 @@
+export const dynamic = 'force-dynamic';
+
 "use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 interface Doctor {
@@ -22,6 +25,12 @@ export default function DoctorDashboardPage() {
   const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
   const [doctor, setDoctor] = useState<Doctor | null>(null);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const router = useRouter();
+
+  // Dynamically change the browser tab name
+  useEffect(() => {
+    document.title = "Diyagnosis | Doctor Dashboard";
+  }, []);
 
   useEffect(() => {
     async function loadDoctorsList() {
@@ -29,7 +38,7 @@ export default function DoctorDashboardPage() {
       const { data } = await supabase.from("doctors").select("*");
       if (data) setAllDoctors(data);
 
-      const storedId = localStorage.getItem("doctorId");
+      const storedId = sessionStorage.getItem("doctorId");
       if (storedId && data) {
         const found = data.find((d) => d.id === storedId);
         if (found) setDoctor(found);
@@ -49,13 +58,19 @@ export default function DoctorDashboardPage() {
   }, [doctor]);
 
   const selectDoctor = (d: Doctor) => {
-    localStorage.setItem("doctorId", d.id);
+    sessionStorage.setItem("doctorId", d.id);
     setDoctor(d);
   };
 
   const switchDoctor = () => {
-    localStorage.removeItem("doctorId");
+    sessionStorage.removeItem("doctorId");
     setDoctor(null);
+  };
+
+  // The function to trigger the USP diagnosis page
+  const startConsultation = (patientId: string) => {
+    sessionStorage.setItem("diagnosePatientId", patientId);
+    router.push("/doctor/consultation");
   };
 
   if (loading) {
@@ -137,12 +152,23 @@ export default function DoctorDashboardPage() {
                     <p className="font-bold text-gray-900 text-base">{p.name}</p>
                     <p className="text-xs text-gray-500">Age: {p.age} years old</p>
                   </div>
-                  <Link
-                    href="/doctor/patient"
-                    className="px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700 transition shadow-sm"
-                  >
-                    Open Profile & Progress
-                  </Link>
+                  
+                  {/* Updated Actions Section */}
+                  <div className="flex items-center gap-3">
+                    <Link
+                      href="/doctor/patient"
+                      className="px-4 py-2 bg-gray-100 text-gray-700 hover:text-gray-900 text-sm font-bold rounded-lg hover:bg-gray-200 transition shadow-sm"
+                    >
+                      View Profile
+                    </Link>
+                    <button
+                      onClick={() => startConsultation(p.id)}
+                      className="px-4 py-2 bg-teal-600 text-white text-sm font-bold rounded-lg hover:bg-teal-700 transition shadow-sm"
+                    >
+                      Start Consultation
+                    </button>
+                  </div>
+
                 </div>
               ))}
             </div>
